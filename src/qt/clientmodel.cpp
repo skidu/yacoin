@@ -50,7 +50,10 @@ int ClientModel::getNumBlocksAtStartup()
 
 QDateTime ClientModel::getLastBlockDate() const
 {
-    return QDateTime::fromTime_t(pindexBest->GetBlockTime());
+    if (pindexBest)
+        return QDateTime::fromTime_t(pindexBest->GetBlockTime());
+    else
+        return QDateTime::fromTime_t(1367991200); // Genesis block's time
 }
 
 void ClientModel::updateTimer()

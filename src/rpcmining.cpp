@@ -6,7 +6,9 @@
 
 #include "main.h"
 #include "db.h"
+#include "txdb.h"
 #include "init.h"
+#include "miner.h"
 #include "bitcoinrpc.h"
 
 using namespace json_spirit;
@@ -114,12 +116,19 @@ Value getmininginfo(const Array& params, bool fHelp)
     obj.push_back(Pair("currentblocksize",(uint64_t)nLastBlockSize));
     obj.push_back(Pair("currentblocktx",(uint64_t)nLastBlockTx));
     obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
+    obj.push_back(Pair("blockvalue",    (uint64_t)GetProofOfWorkReward(GetLastBlockIndex(pindexBest, false)->nBits)));
+//    obj.push_back(Pair("netmhashps",     GetPoWMHashPS()));
+    obj.push_back(Pair("netstakeweight", GetPoSKernelPS()));
     obj.push_back(Pair("errors",        GetWarnings("statusbar")));
     obj.push_back(Pair("generate",      GetBoolArg("-gen")));
     obj.push_back(Pair("genproclimit",  (int)GetArg("-genproclimit", -1)));
     obj.push_back(Pair("hashespersec",  gethashespersec(params, false)));
     obj.push_back(Pair("networkhashps", getnetworkhashps(params, false)));
     obj.push_back(Pair("pooledtx",      (uint64_t)mempool.size()));
+    obj.push_back(Pair("stakeweight",    (uint64_t)pwalletMain->GetStakeWeight(*pwalletMain, STAKE_NORMAL)));
+    obj.push_back(Pair("minweight",    (uint64_t)pwalletMain->GetStakeWeight(*pwalletMain, STAKE_MINWEIGHT)));
+    obj.push_back(Pair("maxweight",    (uint64_t)pwalletMain->GetStakeWeight(*pwalletMain, STAKE_MAXWEIGHT)));
+    obj.push_back(Pair("stakeinterest",    (uint64_t)GetProofOfStakeReward(0, GetLastBlockIndex(pindexBest, true)->nBits, GetLastBlockIndex(pindexBest, true)->nTime, true)));
     obj.push_back(Pair("testnet",       fTestNet));
 
     // WM - Tweaks to report current Nfactor and N.
@@ -270,9 +279,6 @@ Value getworkex(const Array& params, bool fHelp)
 
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
-        if (!pblock->SignBlock(*pwalletMain))
-            throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
-
         return CheckWork(pblock, *pwalletMain, reservekey);
     }
 }
@@ -385,9 +391,6 @@ Value getwork(const Array& params, bool fHelp)
         pblock->nNonce = pdata->nNonce;
         pblock->vtx[0].vin[0].scriptSig = mapNewBlock[pdata->hashMerkleRoot].second;
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
-
-        if (!pblock->SignBlock(*pwalletMain))
-            throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
 
         return CheckWork(pblock, *pwalletMain, reservekey);
     }
@@ -569,9 +572,6 @@ Value submitblock(const Array& params, bool fHelp)
     catch (std::exception &e) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block decode failed");
     }
-
-    if (!block.SignBlock(*pwalletMain))
-        throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
 
     bool fAccepted = ProcessBlock(NULL, &block);
     if (!fAccepted)

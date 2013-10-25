@@ -29,7 +29,7 @@ public:
         DisplayUnit,       // BitcoinUnits::Unit
         DisplayAddresses,  // bool
         DetachDatabases,   // bool
-        CPUMining,         // bool
+		CPUMining,         // bool
         Language,          // QString
         CoinControlFeatures, // bool
         OptionIDRowCount,
@@ -50,16 +50,16 @@ public:
     bool getMinimizeOnClose();
     int getDisplayUnit();
     bool getDisplayAddresses();
-    QString getLanguage() { return language; }
     bool getCoinControlFeatures();
+    QString getLanguage() { return language; }
 
 private:
     int nDisplayUnit;
     bool bDisplayAddresses;
     bool fMinimizeToTray;
     bool fMinimizeOnClose;
-    QString language;
     bool fCoinControlFeatures;
+    QString language;
 
 signals:
     void displayUnitChanged(int unit);

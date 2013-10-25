@@ -2,7 +2,7 @@
 #define QTIPCSERVER_H
 
 // Define yacoin-qt message queue name
-#define BITCOINURI_QUEUE_NAME "BitcoinURI"
+#define BITCOINURI_QUEUE_NAME "YACoinURI"
 
 void ipcScanRelay(int argc, char *argv[]);
 void ipcInit(int argc, char *argv[]);

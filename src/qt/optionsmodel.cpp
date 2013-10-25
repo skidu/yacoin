@@ -45,9 +45,10 @@ void OptionsModel::Init()
     bDisplayAddresses = settings.value("bDisplayAddresses", false).toBool();
     fMinimizeToTray = settings.value("fMinimizeToTray", false).toBool();
     fMinimizeOnClose = settings.value("fMinimizeOnClose", false).toBool();
+    fCoinControlFeatures = settings.value("fCoinControlFeatures", false).toBool();
     nTransactionFee = settings.value("nTransactionFee").toLongLong();
     language = settings.value("language", "").toString();
-    fCoinControlFeatures = settings.value("fCoinControlFeatures", false).toBool();
+
 
     // These are shared with core Bitcoin; we want
     // command-line options to override the GUI settings:
@@ -73,7 +74,7 @@ bool OptionsModel::Upgrade()
     settings.setValue("bImportFinished", true);
 
     // Move settings from old wallet.dat (if any):
-    CWalletDB walletdb("wallet.dat");
+    CWalletDB walletdb(strWalletFileName);
 
     QList<QString> intOptions;
     intOptions << "nDisplayUnit" << "nTransactionFee";

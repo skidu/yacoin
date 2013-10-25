@@ -3,6 +3,7 @@
 #include "init.h"
 #include "walletmodel.h"
 #include "addresstablemodel.h"
+#include "addressbookpage.h"
 #include "bitcoinunits.h"
 #include "addressbookpage.h"
 #include "optionsmodel.h"
@@ -213,7 +214,7 @@ void SendCoinsDialog::on_sendButton_clicked()
     case WalletModel::OK:
         accept();
         CoinControlDialog::coinControl->UnSelectAll();
-        coinControlUpdateLabels(); 
+        coinControlUpdateLabels();
         break;
     }
     fNewRecipientAllowed = true;

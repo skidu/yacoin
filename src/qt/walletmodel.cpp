@@ -161,14 +161,14 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         return DuplicateAddress;
     }
 
-    // we do not use getBalance() here, because some coins could be locked or coin control could be active
     int64 nBalance = 0;
     std::vector<COutput> vCoins;
     wallet->AvailableCoins(vCoins, true, coinControl);
+
     BOOST_FOREACH(const COutput& out, vCoins)
         nBalance += out.tx->vout[out.i].nValue;
 
-    if(total > nBalance) 
+    if(total > nBalance)
     {
         return AmountExceedsBalance;
     }
@@ -197,7 +197,7 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
 
         if(!fCreated)
         {
-            if((total + nFeeRequired) > nBalance)
+            if((total + nFeeRequired) > nBalance) // FIXME: could cause collisions in the future
             {
                 return SendCoinsReturn(AmountWithFeeExceedsBalance, nFeeRequired);
             }
@@ -410,9 +410,8 @@ void WalletModel::listCoins(std::map<QString, std::vector<COutput> >& mapCoins) 
 {
     std::vector<COutput> vCoins;
     wallet->AvailableCoins(vCoins);
-    
     std::vector<COutPoint> vLockedCoins;
-    
+
     // add locked coins
     BOOST_FOREACH(const COutPoint& outpoint, vLockedCoins)
     {
@@ -420,11 +419,11 @@ void WalletModel::listCoins(std::map<QString, std::vector<COutput> >& mapCoins) 
         COutput out(&wallet->mapWallet[outpoint.hash], outpoint.n, wallet->mapWallet[outpoint.hash].GetDepthInMainChain());
         vCoins.push_back(out);
     }
-       
+
     BOOST_FOREACH(const COutput& out, vCoins)
     {
         COutput cout = out;
-        
+
         while (wallet->IsChange(cout.tx->vout[cout.i]) && cout.tx->vin.size() > 0 && wallet->IsMine(cout.tx->vin[0]))
         {
             if (!wallet->mapWallet.count(cout.tx->vin[0].prevout.hash)) break;

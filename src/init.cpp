@@ -2,7 +2,7 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include "db.h"
+#include "txdb.h"
 #include "walletdb.h"
 #include "bitcoinrpc.h"
 #include "net.h"
@@ -10,6 +10,7 @@
 #include "util.h"
 #include "ui_interface.h"
 #include "checkpoints.h"
+#include "zerocoin/ZeroTest.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem/convenience.hpp>
@@ -21,11 +22,16 @@
 #include <signal.h>
 #endif
 
+
 using namespace std;
 using namespace boost;
 
 CWallet* pwalletMain;
 CClientUIInterface uiInterface;
+std::string strWalletFileName;
+unsigned int nNodeLifespan;
+unsigned int nDerivationMethodIndex;
+enum Checkpoints::CPMode CheckpointsMode;
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -73,6 +79,7 @@ void Shutdown(void* parg)
     {
         fShutdown = true;
         nTransactionsUpdated++;
+//        CTxDB().Close();
         bitdb.Flush(false);
         StopNode();
         bitdb.Flush(true);
@@ -224,6 +231,7 @@ std::string HelpMessage()
         "  -gen                   " + _("Generate coins") + "\n" +
         "  -gen=0                 " + _("Don't generate coins") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
+        "  -wallet=<dir>          " + _("Specify wallet file (within data directory)") + "\n" +
         "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 25)") + "\n" +
         "  -dblogsize=<n>         " + _("Set database disk log size in megabytes (default: 100)") + "\n" +
         "  -timeout=<n>           " + _("Specify connection timeout in milliseconds (default: 5000)") + "\n" +
@@ -243,7 +251,10 @@ std::string HelpMessage()
         "  -irc                   " + _("Find peers using internet relay chat (default: 1)") + "\n" +
         "  -listen                " + _("Accept connections from outside (default: 1 if no -proxy or -connect)") + "\n" +
         "  -bind=<addr>           " + _("Bind to given address. Use [host]:port notation for IPv6") + "\n" +
-        "  -dnsseed               " + _("Find peers using DNS lookup (default: 0)") + "\n" +
+        "  -dnsseed               " + _("Find peers using DNS lookup (default: 1)") + "\n" +
+        "  -cppolicy              " + _("Sync checkpoints policy (default: strict)") + "\n" +
+        "  -stakepooledkeys       " + _("Use pooled pubkeys for the last coinstake output (default: 0)") + "\n" +
+        "  -derivationmethod      " + _("Which key derivation method to use by default (default: sha512)") + "\n" +
         "  -banscore=<n>          " + _("Threshold for disconnecting misbehaving peers (default: 100)") + "\n" +
         "  -bantime=<n>           " + _("Number of seconds to keep misbehaving peers from reconnecting (default: 86400)") + "\n" +
         "  -maxreceivebuffer=<n>  " + _("Maximum per-connection receive buffer, <n>*1000 bytes (default: 5000)") + "\n" +
@@ -257,6 +268,7 @@ std::string HelpMessage()
 #endif
         "  -detachdb              " + _("Detach block and address databases. Increases shutdown time (default: 0)") + "\n" +
         "  -paytxfee=<amt>        " + _("Fee per KB to add to transactions you send") + "\n" +
+        "  -mininput=<amt>        " + _("When creating transactions, ignore inputs with value less than this (default: 0.01)") + "\n" +
 #ifdef QT_GUI
         "  -server                " + _("Accept command line and JSON-RPC commands") + "\n" +
 #endif
@@ -278,6 +290,7 @@ std::string HelpMessage()
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
+        "  -walletnotify=<cmd>    " + _("Execute command when a wallet transaction changes (%s in cmd is replaced by TxID)") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
@@ -348,6 +361,24 @@ bool AppInit2()
 #endif
 
     // ********************************************************* Step 2: parameter interactions
+
+    nNodeLifespan = GetArg("-addrlifespan", 7);
+    fStakeUsePooledKeys = GetBoolArg("-stakepooledkeys", false);
+
+    CheckpointsMode = Checkpoints::STRICT;
+    std::string strCpMode = GetArg("-cppolicy", "strict");
+
+    if(strCpMode == "strict")
+        CheckpointsMode = Checkpoints::STRICT;
+
+    if(strCpMode == "advisory")
+        CheckpointsMode = Checkpoints::ADVISORY;
+
+    if(strCpMode == "permissive")
+        CheckpointsMode = Checkpoints::PERMISSIVE;
+
+    if(GetArg("-derivationmethod", "sha512") == "scrypt+sha512")
+        nDerivationMethodIndex = 1;
 
     fTestNet = GetBoolArg("-testnet");
     if (fTestNet) {
@@ -440,9 +471,20 @@ bool AppInit2()
             InitWarning(_("Warning: -paytxfee is set very high! This is the transaction fee you will pay if you send a transaction."));
     }
 
+    if (mapArgs.count("-mininput"))
+    {
+        if (!ParseMoney(mapArgs["-mininput"], nMinimumInputValue))
+            return InitError(strprintf(_("Invalid amount for -mininput=<amount>: '%s'"), mapArgs["-mininput"].c_str()));
+    }
+
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
     std::string strDataDir = GetDataDir().string();
+    std::string strWalletFileName = GetArg("-wallet", "wallet.dat");
+
+    // strWalletFileName must be a plain filename without a directory
+    if (strWalletFileName != boost::filesystem::basename(strWalletFileName) + boost::filesystem::extension(strWalletFileName))
+        return InitError(strprintf(_("Wallet %s resides outside data directory %s."), strWalletFileName.c_str(), strDataDir.c_str()));
 
     // Make sure only a single Bitcoin process is using the data directory.
     boost::filesystem::path pathLockFile = GetDataDir() / ".lock";
@@ -505,13 +547,13 @@ bool AppInit2()
     if (GetBoolArg("-salvagewallet"))
     {
         // Recover readable keypairs:
-        if (!CWalletDB::Recover(bitdb, "wallet.dat", true))
+        if (!CWalletDB::Recover(bitdb, strWalletFileName, true))
             return false;
     }
 
-    if (filesystem::exists(GetDataDir() / "wallet.dat"))
+    if (filesystem::exists(GetDataDir() / strWalletFileName))
     {
-        CDBEnv::VerifyResult r = bitdb.Verify("wallet.dat", CWalletDB::Recover);
+        CDBEnv::VerifyResult r = bitdb.Verify(strWalletFileName, CWalletDB::Recover);
         if (r == CDBEnv::RECOVER_OK)
         {
             string msg = strprintf(_("Warning: wallet.dat corrupt, data salvaged!"
@@ -647,8 +689,8 @@ bool AppInit2()
         AddOneShot(strDest);
 
     // TODO: replace this by DNSseed
-    AddOneShot(string("82.211.30.212"));
-    AddOneShot(string("81.17.30.114"));
+    //AddOneShot(string("82.211.30.212"));
+    //AddOneShot(string("81.17.30.114"));
 
     // ********************************************************* Step 7: load blockchain
 
@@ -713,13 +755,23 @@ bool AppInit2()
         return false;
     }
 
+    // ********************************************************* Testing Zerocoin
+
+
+    if (GetBoolArg("-zerotest", false))
+    {
+        printf("\n=== ZeroCoin tests start ===\n");
+        Test_RunAllTests();
+        printf("=== ZeroCoin tests end ===\n\n");
+    }
+
     // ********************************************************* Step 8: load wallet
 
     uiInterface.InitMessage(_("<b>Loading wallet...</b>"));
     printf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun = true;
-    pwalletMain = new CWallet("wallet.dat");
+    pwalletMain = new CWallet(strWalletFileName);
     DBErrors nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
     if (nLoadWalletRet != DB_LOAD_OK)
     {
@@ -782,7 +834,7 @@ bool AppInit2()
         pindexRescan = pindexGenesisBlock;
     else
     {
-        CWalletDB walletdb("wallet.dat");
+        CWalletDB walletdb(strWalletFileName);
         CBlockLocator locator;
         if (walletdb.ReadBestBlock(locator))
             pindexRescan = locator.GetBlockIndex();
@@ -808,6 +860,7 @@ bool AppInit2()
             if (file)
                 LoadExternalBlockFile(file);
         }
+        exit(0);
     }
 
     filesystem::path pathBootstrap = GetDataDir() / "bootstrap.dat";
