@@ -57,7 +57,7 @@ static const int fHaveUPnP = true;
 static const int fHaveUPnP = false;
 #endif
 
-static const uint256 hashGenesisBlockOfficial("0x0000060fc90618113cde415ead019a1052a9abc43afcccff38608ff8751353e5");
+static const uint256 hashGenesisBlock("0x0000060fc90618113cde415ead019a1052a9abc43afcccff38608ff8751353e5");
 static const uint256 hashGenesisBlockTestNet("0xfe20c2c2fc02b36d2473e1f51dba1fb455d41ff42966e2a4edabb98fdd7107e6");
 
 static const int64 nMaxClockDrift = 2 * 60 * 60;        // two hours
@@ -138,14 +138,6 @@ void ResendWalletTransactions();
 
 // yacoin: calculate Nfactor using timestamp
 unsigned char GetNfactor(int64 nTimestamp);
-
-
-
-
-
-
-
-
 
 bool GetWalletFile(CWallet* pwallet, std::string &strWalletFileOut);
 
